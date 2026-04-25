@@ -61,7 +61,7 @@
 | CDN / Network | 2 700 000 | 13 500 000 | 108 000 000 |
 | Observability | 3 600 000 | 16 200 000 | 81 000 000 |
 | Security tooling | 4 500 000 | 10 800 000 | 54 000 000 |
-| ML / Recommendation infra | 1 800 000 | 13 500 000 | 135 000 000 |
+| ML / Recommendation infrastrucrure | 1 800 000 | 13 500 000 | 135 000 000 |
 | DR / резервирование | 2 700 000 | 13 500 000 | 81 000 000 |
 
 ---
