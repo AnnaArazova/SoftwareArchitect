@@ -36,6 +36,31 @@ Event Bus
 Analytics / Gamification / Notification / Recommendation
 ```
 
+```mermaid
+flowchart LR
+    User["Пользователь"] --> App["Mobile App / Web"]
+    App --> APIGW["API Gateway / BFF"]
+
+    APIGW --> Identity["Identity Service"]
+    APIGW --> Profile["User Profile Service"]
+    APIGW --> Training["Training Service"]
+    APIGW --> Social["Social Graph Service"]
+    APIGW --> Feed["Activity Feed Service"]
+    APIGW --> Competition["Competition Service"]
+
+    Training --> Analytics["Analytics / Insights Service"]
+    Training --> Gamification["Gamification Service"]
+    Training --> Recommendation["Recommendation Service"]
+
+    Social --> Feed
+    Gamification --> Notification["Notification Service"]
+    Recommendation --> Commerce["Commerce Integration Service"]
+    Recommendation --> Promotion["Promotion Service"]
+
+    Notification --> App
+    Commerce --> Ecommerce["Existing E-commerce Apps"]
+```
+
 ---
 
 # 14.2. Информационное представление
@@ -77,6 +102,70 @@ Analytics / Gamification / Notification / Recommendation
 - кэш — Redis;
 - социальные связи — graph-like model.
 
+```mermaid
+erDiagram
+    USER ||--|| PROFILE : has
+    USER ||--o{ WORKOUT : performs
+    USER ||--o{ DEVICE : connects
+    USER ||--o{ INVENTORY_ITEM : owns
+    USER ||--o{ ACHIEVEMENT : receives
+    USER ||--o{ RECOMMENDATION : receives
+    USER ||--o{ GROUP_MEMBERSHIP : participates
+
+    GROUP ||--o{ GROUP_MEMBERSHIP : includes
+    WORKOUT ||--o{ WORKOUT_METRICS : contains
+    WORKOUT ||--o{ ROUTE_POINT : has
+    WORKOUT ||--o{ EVENT : produces
+
+    CHALLENGE ||--o{ WORKOUT : includes
+    COMPETITION ||--o{ CHALLENGE : contains
+    PROMOTION ||--o{ RECOMMENDATION : used_in
+
+    USER {
+        string id
+        string email
+        string region
+        string timezone
+    }
+
+    PROFILE {
+        string user_id
+        string sport_level
+        string preferences
+        string privacy_settings
+    }
+
+    WORKOUT {
+        string id
+        string user_id
+        string type
+        datetime started_at
+        datetime finished_at
+    }
+
+    WORKOUT_METRICS {
+        string workout_id
+        float distance
+        float pace
+        int heart_rate
+        int calories
+    }
+
+    DEVICE {
+        string id
+        string user_id
+        string provider
+        string type
+    }
+
+    INVENTORY_ITEM {
+        string id
+        string user_id
+        string type
+        int usage_distance
+    }
+```
+
 ---
 
 # 14.3. Представление многозадачности / concurrency
@@ -108,6 +197,43 @@ Leaderboard и аналитика читаются из подготовленн
 ### 5. Backpressure
 При пиках система ограничивает скорость обработки, чтобы не упасть полностью.
 
+```mermaid
+sequenceDiagram
+    participant App as Mobile App
+    participant API as API Gateway
+    participant Training as Training Service
+    participant DB as Training DB
+    participant Outbox as Outbox
+    participant Bus as Event Bus
+    participant Analytics as Analytics Service
+    participant Game as Gamification Service
+    participant Notify as Notification Service
+    participant Feed as Activity Feed Service
+
+    App->>API: Submit workout
+    API->>Training: Save workout request
+    Training->>Training: Validate + idempotency check
+    Training->>DB: Persist workout
+    Training->>Outbox: Save training.completed event
+    Training-->>API: Success response
+    API-->>App: Workout saved
+
+    Outbox->>Bus: Publish training.completed
+
+    par Async processing
+        Bus-->>Analytics: training.completed
+        Analytics->>Analytics: Update aggregates
+    and
+        Bus-->>Game: training.completed
+        Game->>Game: Check achievements
+    and
+        Bus-->>Feed: training.completed
+        Feed->>Feed: Update activity feed
+    and
+        Bus-->>Notify: training.completed / achievement
+        Notify-->>App: Push notification
+    end
+```
 ---
 
 # 14.4. Инфраструктурное представление
@@ -138,6 +264,73 @@ Leaderboard и аналитика читаются из подготовленн
 Для MVP достаточно одного основного региона и disaster recovery.  
 Для глобального масштаба — несколько регионов с локализацией данных.
 
+```mermaid
+flowchart TB
+    subgraph Internet["Internet"]
+        Users["Users"]
+        Devices["Wearables / Devices"]
+    end
+
+    subgraph Edge["Edge Layer"]
+        DNS["Global DNS"]
+        CDN["CDN"]
+        WAF["WAF"]
+        APIGW["API Gateway"]
+    end
+
+    subgraph RegionA["Primary Cloud Region"]
+        subgraph K8S["Kubernetes Cluster"]
+            BFF["BFF Pods"]
+            Identity["Identity Service Pods"]
+            Profile["Profile Service Pods"]
+            Training["Training Service Pods"]
+            Social["Social Service Pods"]
+            Recommendation["Recommendation Pods"]
+            Notification["Notification Pods"]
+            Competition["Competition Pods"]
+        end
+
+        Kafka["Managed Kafka / PubSub"]
+        Redis["Redis Cache"]
+        SQL["Relational DB"]
+        TSDB["Time-series / Training DB"]
+        Warehouse["Data Warehouse"]
+        ObjectStorage["Object Storage"]
+        Monitoring["Monitoring / Logging / Tracing"]
+        Secrets["Secret Manager"]
+    end
+
+    subgraph DR["Disaster Recovery Region"]
+        BackupDB["Replicated DB / Backups"]
+        BackupStorage["Backup Object Storage"]
+    end
+
+    Users --> DNS --> CDN --> WAF --> APIGW --> BFF
+    Devices --> APIGW
+
+    BFF --> Identity
+    BFF --> Profile
+    BFF --> Training
+    BFF --> Social
+    BFF --> Recommendation
+    BFF --> Competition
+
+    Training --> TSDB
+    Profile --> SQL
+    Identity --> SQL
+    Social --> SQL
+    Competition --> Redis
+    Training --> Kafka
+    Kafka --> Recommendation
+    Kafka --> Notification
+    Kafka --> Warehouse
+
+    K8S --> Monitoring
+    K8S --> Secrets
+
+    SQL --> BackupDB
+    ObjectStorage --> BackupStorage
+```
 ---
 
 # 14.5. Представление безопасности
@@ -168,3 +361,48 @@ Leaderboard и аналитика читаются из подготовленн
 - точные маршруты скрыты;
 - активность видна только выбранной аудитории;
 - текущая геолокация не раскрывается без явного согласия.
+
+```mermaid
+flowchart TB
+    User["Пользователь"] --> App["Mobile App"]
+
+    App --> TLS["TLS / HTTPS"]
+    TLS --> WAF["WAF + Rate Limiting"]
+    WAF --> APIGW["API Gateway"]
+
+    APIGW --> Auth["Identity & Access Service"]
+    Auth --> Token["OAuth2 / OIDC Tokens"]
+
+    APIGW --> Policy["Authorization Layer<br/>RBAC / ABAC"]
+
+    Policy --> Profile["User Profile Service"]
+    Policy --> Training["Training Service"]
+    Policy --> Social["Social Graph Service"]
+    Policy --> Commerce["Commerce Integration Service"]
+    Policy --> Analytics["Analytics Service"]
+
+    Profile --> DataClass["Data Classification"]
+    Training --> DataClass
+    Social --> DataClass
+    Commerce --> DataClass
+    Analytics --> DataClass
+
+    DataClass --> Encryption["Encryption at Rest"]
+    Profile --> Audit["Audit Logs"]
+    Training --> Audit
+    Social --> Audit
+    Commerce --> Audit
+    Analytics --> Audit
+
+    Profile --> Consent["Consent Management"]
+    Training --> Masking["Geo Data Masking"]
+
+    Encryption --> DB["Databases / Storage"]
+    Audit --> SIEM["Security Monitoring / SIEM"]
+
+    Secrets["Secret Manager"] --> Profile
+    Secrets --> Training
+    Secrets --> Social
+    Secrets --> Commerce
+    Secrets --> Analytics
+```
